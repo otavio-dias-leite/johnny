@@ -1,27 +1,25 @@
-# JOHNNY — Version 1.0
+# JOHNNY
 
-Firmware para dispositivos M5Stack e ESP32, com foco em hardware hacking e música.
+Complete Cardputer ADV Firmware for Hardware Hacking & Music.
 
-## Site
-Site estático na raiz do repositório. Ative o GitHub Pages usando a branch `main` e a pasta `/`.
+## First release
 
-## Primeiro alvo
-M5Stack Cardputer ADV (ESP32-S3).
+Version: `1.0.0`
+
+Target: M5Stack Cardputer ADV (ESP32-S3).
 
 ## Firmware
-O projeto utiliza C++/Arduino. O sketch principal recebido é o Johnny MP3 ADV v4.0, para Cardputer ADV.
 
-Dependências principais:
-- M5Cardputer / M5Unified / M5GFX
-- ESP8266Audio
+Arduino/C++ source: [firmware/j.ino](firmware/j.ino).
+
+The first build provides the MP3 player firmware for Cardputer ADV. Build dependencies and local compilation instructions are documented in [docs/firmware.md](docs/firmware.md).
 
 ## Web Flasher
-A interface do gravador será ativada quando os binários `.bin` e o manifesto de flash do Cardputer ADV forem compilados e validados. Um arquivo `.ino` é código-fonte e não pode ser gravado diretamente pelo navegador.
 
-## Compatibilidade
-- Cardputer ADV: primeiro alvo.
-- Outros dispositivos M5Stack: planejados.
-- Família ESP32: planejada.
+The site reads published GitHub Releases and lets the user choose a version. Each release contains a merged ESP32-S3 image and an ESP Web Tools manifest. Installation requires Chrome or Edge, HTTPS, and a USB data cable.
 
-## Versão
-1.0.0
+## Build and releases
+
+GitHub Actions compiles the firmware and publishes a release only after a successful build. See [Build and installation](docs/firmware.md).
+
+Other M5Stack devices and ESP32 variants are not marked as supported until separate builds are implemented and tested.
