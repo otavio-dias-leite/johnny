@@ -1,0 +1,119 @@
+name: Build and publish JOHNNY firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firmware/j.ino"
+      - "VERSION"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-cardputer-adv:
+    name: Build Cardputer ADV
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install M5Stack board core
+        run: |
+          arduino-cli core update-index --additional-urls https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32 --additional-urls https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+
+      - name: Install libraries
+        run: arduino-cli lib install M5Cardputer ESP8266Audio
+
+      - name: Compile firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          SKETCH_DIR="$RUNNER_TEMP/johnny_mp3"
+          BUILD_DIR="$RUNNER_TEMP/johnny-build"
+          OUT_DIR="$GITHUB_WORKSPACE/dist"
+          mkdir -p "$SKETCH_DIR" "$BUILD_DIR" "$OUT_DIR"
+          cp firmware/j.ino "$SKETCH_DIR/johnny_mp3.ino"
+
+          arduino-cli compile \
+            --fqbn m5stack:esp32:m5stack_cardputer \
+            --build-path "$BUILD_DIR/cache" \
+            --output-dir "$BUILD_DIR/output" \
+            --export-binaries \
+            --build-property build.partitions=huge_app \
+            --build-property upload.maximum_size=3145728 \
+            "$SKETCH_DIR"
+
+          APP_BIN="$(find "$BUILD_DIR/output" -maxdepth 1 -type f -name '*.bin' ! -name '*.bootloader.bin' ! -name '*.partitions.bin' ! -name '*.boot_app0.bin' | head -n 1)"
+          BOOTLOADER_BIN="$(find "$BUILD_DIR/output" -maxdepth 1 -type f -name '*.bootloader.bin' | head -n 1)"
+          PARTITIONS_BIN="$(find "$BUILD_DIR/output" -maxdepth 1 -type f -name '*.partitions.bin' | head -n 1)"
+          BOOT_APP0_BIN="$(find "$BUILD_DIR/output" -maxdepth 1 -type f -name '*.boot_app0.bin' | head -n 1)"
+          if [ -z "$BOOT_APP0_BIN" ]; then
+            BOOT_APP0_BIN="$(find "$HOME/.arduino15" -type f -name boot_app0.bin | head -n 1)"
+          fi
+
+          test -n "$APP_BIN"
+          test -n "$BOOTLOADER_BIN"
+          test -n "$PARTITIONS_BIN"
+          test -n "$BOOT_APP0_BIN"
+
+          python -m pip install --upgrade esptool
+          python -m esptool --chip esp32s3 merge-bin \
+            --output "$OUT_DIR/johnny-cardputer-adv.bin" \
+            0x0 "$BOOTLOADER_BIN" \
+            0x8000 "$PARTITIONS_BIN" \
+            0xe000 "$BOOT_APP0_BIN" \
+            0x10000 "$APP_BIN"
+
+          cp firmware/j.ino "$OUT_DIR/johnny_mp3.ino"
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          cat > "$OUT_DIR/manifest.json" <<EOF
+          {
+            "name": "JOHNNY Cardputer ADV",
+            "version": "$VERSION",
+            "new_install_prompt_erase": true,
+            "builds": [
+              {
+                "chipFamily": "ESP32-S3",
+                "parts": [
+                  { "path": "johnny-cardputer-adv.bin", "offset": 0 }
+                ]
+              }
+            ]
+          }
+          EOF
+          printf 'JOHNNY_VERSION=%s\nTARGET=M5Stack Cardputer ADV\nCHIP=ESP32-S3\n' "$VERSION" > "$OUT_DIR/build-info.txt"
+          (cd "$OUT_DIR" && sha256sum johnny-cardputer-adv.bin manifest.json johnny_mp3.ino build-info.txt > SHA256SUMS)
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: johnny-cardputer-adv-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Read release version
+        id: version
+        run: echo "value=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          target_commitish: ${{ github.sha }}
+          name: JOHNNY v${{ steps.version.outputs.value }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/johnny-cardputer-adv.bin
+            dist/manifest.json
+            dist/johnny_mp3.ino
+            dist/build-info.txt
+            dist/SHA256SUMS
